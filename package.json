@@ -1,0 +1,21 @@
+{
+  "name": "markdown-desk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small, offline Markdown editor and print-friendly viewer.",
+  "license": "MIT",
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "start": "node scripts/serve.mjs",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "dompurify": "3.4.16",
+    "marked": "18.0.14",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
