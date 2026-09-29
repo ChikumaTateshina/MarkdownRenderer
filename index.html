@@ -23,10 +23,11 @@
       <button id="save-button" type="button">保存</button>
       <button id="print-button" type="button">印刷 / PDF</button>
     </div>
-    <input id="file-input" type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" hidden>
+    <input id="file-input" type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" multiple hidden>
   </header>
 
   <main>
+    <div id="file-tabs" class="file-tabs" role="tablist" aria-label="開いているファイル"></div>
     <section class="document-bar" aria-label="文書と表示設定">
       <div class="document-title"><label class="sr-only" for="filename">ファイル名</label><input id="filename" value="はじめてのノート.md" spellcheck="false" maxlength="120"></div>
       <div class="view-tabs" role="group" aria-label="表示モード">
@@ -74,7 +75,7 @@
   <div id="toast" role="status" class="toast" hidden></div>
   <dialog id="help-dialog">
     <div class="dialog-heading"><h2>使い方</h2><button id="close-help" aria-label="閉じる">×</button></div>
-    <dl><dt>ソースで編集</dt><dd>Markdown記法で入力すると、右側のプレビューに反映されます。</dd><dt>プレビューで編集</dt><dd>「プレビューを編集」をオンにすると、本文を直接編集できます。書式ボタンも利用できます。編集するとMarkdownの記法は標準的な形式に整えられます。独自記法や複雑なHTMLはソースで編集してください。</dd><dt>ファイルを保存</dt><dd>「保存」または Ctrl / ⌘ + S で .md をダウンロードします。元のファイルは上書きしません。下書きはこのブラウザー内に自動保存されます。</dd><dt>印刷・PDF</dt><dd>「印刷 / PDF」から印刷できます。PDFは印刷画面の出力先から選択してください。ヘッダー・フッターはブラウザーの印刷設定でオフにできます。</dd><dt>画像</dt><dd>HTTPS画像URLを使用できます（画像の取得には通信が発生します）。ローカルファイルの相対画像パスは非対応です。</dd><dt>キーボード</dt><dd>Ctrl / ⌘ + O：開く　S：保存　P：印刷　Z：元に戻す　Shift + Z：やり直す</dd></dl>
+    <dl><dt>複数ファイル</dt><dd>「開く」で複数ファイルを選択するか、まとめてドロップできます。「新規」も新しいタブで開きます。タブ名で切り替え、×で閉じます。●はファイル未保存の変更です。保存・印刷は選択中のタブに対して行います。</dd><dt>ソースで編集</dt><dd>Markdown記法で入力すると、右側のプレビューに反映されます。</dd><dt>プレビューで編集</dt><dd>「プレビューを編集」をオンにすると、本文を直接編集できます。書式ボタンも利用できます。編集するとMarkdownの記法は標準的な形式に整えられます。独自記法や複雑なHTMLはソースで編集してください。</dd><dt>ファイルを保存</dt><dd>「保存」または Ctrl / ⌘ + S で .md をダウンロードします。元のファイルは上書きしません。下書きはこのブラウザー内に自動保存されます。</dd><dt>印刷・PDF</dt><dd>「印刷 / PDF」から印刷できます。PDFは印刷画面の出力先から選択してください。ヘッダー・フッターはブラウザーの印刷設定でオフにできます。</dd><dt>画像</dt><dd>HTTPS画像URLを使用できます（画像の取得には通信が発生します）。ローカルファイルの相対画像パスは非対応です。</dd><dt>キーボード</dt><dd>Ctrl / ⌘ + O：開く　S：保存　P：印刷　Z：元に戻す　Shift + Z：やり直す</dd></dl>
     <p class="help-note">UTF-8のMarkdownに対応。下書きはバックアップではありません。大切な文書はファイルとして保存してください。</p>
   </dialog>
   <noscript>このアプリを使用するにはJavaScriptを有効にしてください。</noscript>

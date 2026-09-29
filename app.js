@@ -5,7 +5,8 @@
   const source = $('source');
   const preview = $('preview');
   const filename = $('filename');
-  const storageKey = 'markdown-desk:draft:v1';
+  const storageKey = 'markdown-desk:tabs:v2';
+  const legacyStorageKey = 'markdown-desk:draft:v1';
   const example = `# 書くことに、集中しよう。
 
 アイデアのメモから、共有するドキュメントまで。  
@@ -85,7 +86,108 @@ console.log(message);
   let composing = false;
   let lastEditor = 'source';
   let storageAvailable = true;
+  let documents = [];
+  let activeId;
+  let nextId = 0;
   const dirty = () => source.value !== savedText || filename.value !== savedName;
+  const documentDirty = doc => doc.text !== doc.savedText || doc.name !== doc.savedName;
+
+  function createDocument(text, name, saved = {}) {
+    return {
+      id: ++nextId, text, name,
+      savedText: typeof saved.savedText === 'string' ? saved.savedText : text,
+      savedName: typeof saved.savedName === 'string' ? saved.savedName : name,
+      history: [text], historyIndex: 0, mode: 'split', visual: false,
+      selectionStart: 0, selectionEnd: 0, sourceScroll: 0, previewScroll: 0,
+    };
+  }
+
+  function captureDocument() {
+    const doc = documents.find(doc => doc.id === activeId);
+    if (!doc) return;
+    Object.assign(doc, {
+      text: source.value, name: filename.value, savedText, savedName,
+      history, historyIndex, mode: $('workspace').dataset.mode, visual,
+      selectionStart: source.selectionStart, selectionEnd: source.selectionEnd,
+      sourceScroll: source.scrollTop, previewScroll: preview.parentElement.scrollTop,
+    });
+  }
+
+  function renderTabs() {
+    captureDocument();
+    $('file-tabs').replaceChildren(...documents.map(doc => {
+      const group = document.createElement('div');
+      group.className = 'file-tab' + (doc.id === activeId ? ' active' : '');
+      group.setAttribute('role', 'presentation');
+      const tab = document.createElement('button');
+      tab.id = `file-tab-${doc.id}`;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(doc.id === activeId));
+      tab.tabIndex = doc.id === activeId ? 0 : -1;
+      tab.textContent = `${documentDirty(doc) ? '● ' : ''}${doc.name || '無題.md'}`;
+      tab.title = doc.name || '無題.md';
+      tab.addEventListener('click', () => switchDocument(doc.id));
+      tab.addEventListener('keydown', event => {
+        const index = documents.findIndex(item => item.id === doc.id);
+        let target;
+        if (event.key === 'ArrowRight') target = (index + 1) % documents.length;
+        if (event.key === 'ArrowLeft') target = (index - 1 + documents.length) % documents.length;
+        if (event.key === 'Home') target = 0;
+        if (event.key === 'End') target = documents.length - 1;
+        if (target !== undefined) { event.preventDefault(); switchDocument(documents[target].id); }
+      });
+      const close = document.createElement('button');
+      close.className = 'close-tab';
+      close.textContent = '×';
+      close.setAttribute('aria-label', `${doc.name || '無題.md'}を閉じる`);
+      close.addEventListener('click', () => closeDocument(doc.id));
+      group.append(tab, close);
+      return group;
+    }));
+  }
+
+  function switchDocument(id) {
+    captureDocument();
+    activateDocument(id);
+  }
+
+  function activateDocument(id) {
+    const doc = documents.find(doc => doc.id === id);
+    if (!doc) return;
+    clearTimeout(renderTimer);
+    clearTimeout(persistTimer);
+    activeId = id;
+    source.value = doc.text;
+    filename.value = doc.name;
+    savedText = doc.savedText;
+    savedName = doc.savedName;
+    history = doc.history;
+    historyIndex = doc.historyIndex;
+    visual = doc.visual;
+    // Apply the saved mode without overwriting the outgoing document.
+    setMode(doc.mode);
+    setVisual(doc.visual);
+    source.setSelectionRange(doc.selectionStart, doc.selectionEnd);
+    source.scrollTop = doc.sourceScroll;
+    preview.parentElement.scrollTop = doc.previewScroll;
+    updateStats();
+    persist();
+    const tab = $(`file-tab-${id}`);
+    tab.focus({ preventScroll: true });
+    tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function closeDocument(id) {
+    captureDocument();
+    const index = documents.findIndex(doc => doc.id === id);
+    const doc = documents[index];
+    if (!doc) return;
+    if (documentDirty(doc) && !confirm(`「${doc.name || '無題.md'}」にはファイルに保存していない変更があります。このタブを閉じますか？`)) return;
+    documents.splice(index, 1);
+    if (!documents.length) documents.push(createDocument('', '無題.md'));
+    if (id === activeId) activateDocument(documents[Math.min(index, documents.length - 1)].id);
+    else { renderTabs(); persist(); }
+  }
 
   function toast(message) {
     $('toast').textContent = message;
@@ -130,12 +232,18 @@ console.log(message);
     $('undo-button').disabled = historyIndex <= 0;
     $('redo-button').disabled = historyIndex >= history.length - 1;
     document.title = `${dirty() ? '• ' : ''}${filename.value || '無題.md'} — Markdown Desk`;
+    renderTabs();
   }
 
   function persist() {
     clearTimeout(persistTimer);
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ text: source.value, name: filename.value, savedText, savedName }));
+      captureDocument();
+      localStorage.setItem(storageKey, JSON.stringify({
+        activeIndex: documents.findIndex(doc => doc.id === activeId),
+        documents: documents.map(({ text, name, savedText, savedName, mode, visual }) => ({ text, name, savedText, savedName, mode, visual })),
+      }));
+      localStorage.removeItem(legacyStorageKey);
       storageAvailable = true;
       $('save-status').textContent = dirty() ? '下書きを端末に保存済み · ファイル未保存' : '下書きを端末に保存済み';
     } catch {
@@ -206,24 +314,11 @@ console.log(message);
     if (enabled) { lastEditor = 'preview'; preview.focus(); }
   }
 
-  function replaceDocument(text, name) {
-    clearTimeout(renderTimer);
-    source.value = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-    filename.value = name;
-    savedText = source.value;
-    savedName = name;
-    history = [];
-    historyIndex = -1;
-    record();
-    render();
-    updateStats();
-    persist();
-    source.scrollTop = 0;
-    preview.parentElement.scrollTop = 0;
-  }
-
-  function mayReplace() {
-    return !dirty() || confirm('ファイルに保存していない変更があります。現在の下書きを置き換えますか？');
+  function addDocument(text, name) {
+    captureDocument();
+    const doc = createDocument(text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n'), name);
+    documents.push(doc);
+    activateDocument(doc.id);
   }
 
   async function openFile(file) {
@@ -233,10 +328,15 @@ console.log(message);
     try {
       const bytes = await file.arrayBuffer();
       const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      if (!mayReplace()) return;
-      replaceDocument(text, file.name);
+      addDocument(text, file.name);
       toast(`${file.name} を開きました`);
     } catch { toast('読み込めませんでした。UTF-8で保存したファイルを選択してください'); }
+  }
+
+  let openQueue = Promise.resolve();
+  function openFiles(files) {
+    const batch = Array.from(files);
+    openQueue = openQueue.then(async () => { for (const file of batch) await openFile(file); });
   }
 
   function save() {
@@ -352,9 +452,9 @@ console.log(message);
   });
   $('undo-button').addEventListener('click', () => moveHistory(-1));
   $('redo-button').addEventListener('click', () => moveHistory(1));
-  $('new-button').addEventListener('click', () => { if (mayReplace()) { replaceDocument('', '無題.md'); source.focus(); } });
+  $('new-button').addEventListener('click', () => { addDocument('', '無題.md'); source.focus(); });
   $('open-button').addEventListener('click', () => $('file-input').click());
-  $('file-input').addEventListener('change', event => { openFile(event.target.files[0]); event.target.value = ''; });
+  $('file-input').addEventListener('change', event => { openFiles(event.target.files); event.target.value = ''; });
   $('save-button').addEventListener('click', save);
   $('print-button').addEventListener('click', () => { render(); window.print(); });
   window.addEventListener('beforeprint', render);
@@ -378,22 +478,33 @@ console.log(message);
     event.preventDefault();
     dragDepth = 0;
     document.body.classList.remove('dragging');
-    if (event.dataTransfer.files.length) openFile(event.dataTransfer.files[0]);
+    if (event.dataTransfer.files.length) openFiles(event.dataTransfer.files);
   });
   window.addEventListener('pagehide', persist);
   window.addEventListener('beforeunload', event => {
     persist();
-    if (dirty() && !storageAvailable) { event.preventDefault(); event.returnValue = ''; }
+    if (documents.some(documentDirty) && !storageAvailable) { event.preventDefault(); event.returnValue = ''; }
   });
 
-  let draft;
-  try { draft = JSON.parse(localStorage.getItem(storageKey)); } catch { /* Storage may be disabled. */ }
-  source.value = typeof draft?.text === 'string' ? draft.text : example;
-  if (typeof draft?.name === 'string') filename.value = draft.name;
-  if (typeof draft?.savedText === 'string') savedText = draft.savedText;
-  if (typeof draft?.savedName === 'string') savedName = draft.savedName;
-  record();
-  render();
-  updateStats();
-  persist();
+  let session;
+  let legacy;
+  try {
+    session = JSON.parse(localStorage.getItem(storageKey));
+    legacy = JSON.parse(localStorage.getItem(legacyStorageKey));
+  } catch { /* Storage may be disabled. */ }
+  if (Array.isArray(session?.documents)) {
+    documents = session.documents.filter(doc => doc && typeof doc.text === 'string' && typeof doc.name === 'string').map(doc => {
+      const restored = createDocument(doc.text, doc.name, doc);
+      restored.mode = ['source', 'split', 'preview'].includes(doc.mode) ? doc.mode : 'split';
+      restored.visual = doc.visual === true && restored.mode !== 'source';
+      return restored;
+    });
+  }
+  if (!documents.length) {
+    documents.push(typeof legacy?.text === 'string'
+      ? createDocument(legacy.text, typeof legacy.name === 'string' ? legacy.name : '無題.md', legacy)
+      : createDocument(example, filename.value));
+  }
+  const index = Number.isInteger(session?.activeIndex) ? Math.max(0, Math.min(session.activeIndex, documents.length - 1)) : 0;
+  activateDocument(documents[index].id);
 })();

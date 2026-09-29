@@ -42,15 +42,17 @@ test('downloads exact source and restores drafts', async ({ page }) => {
   await expect(page.locator('#filename')).toHaveValue('テスト.md');
 });
 
-test('opens UTF-8 files and protects unsaved work', async ({ page }) => {
+test('opens UTF-8 files in tabs and protects unsaved work when closing', async ({ page }) => {
   await page.locator('#file-input').setInputFiles({ name: 'opened.md', mimeType: 'text/markdown', buffer: Buffer.from('\uFEFF# 読み込み\r\n\r\n本文') });
   await expect(page.locator('#preview h1')).toHaveText('読み込み');
   await expect(page.locator('#filename')).toHaveValue('opened.md');
   await page.locator('#source').fill('# unsaved');
   page.once('dialog', dialog => dialog.dismiss());
-  await page.locator('#new-button').click();
+  await page.getByRole('button', { name: 'opened.mdを閉じる', exact: true }).click();
   await expect(page.locator('#source')).toHaveValue('# unsaved');
   page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'opened.mdを閉じる', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'opened.md', exact: true })).toHaveCount(0);
   await page.locator('#new-button').click();
   await expect(page.locator('#source')).toHaveValue('');
 });
@@ -72,6 +74,7 @@ test('print shows the document even from source-only mode', async ({ page }) => 
   await expect(page.locator('.app-header')).not.toBeVisible();
   await expect(page.locator('.source-pane')).not.toBeVisible();
   await expect(page.locator('.format-bar')).not.toBeVisible();
+  await expect(page.locator('#file-tabs')).not.toBeVisible();
   expect(await page.locator('.paper-wrap').evaluate(e => getComputedStyle(e).overflow)).toBe('visible');
 });
 
@@ -149,4 +152,74 @@ test('storage errors leave editing and file saving available', async ({ page }) 
   const download = page.waitForEvent('download');
   await page.locator('#save-button').click();
   expect((await download).suggestedFilename()).toMatch(/\.md$/);
+});
+
+test('multiple files keep independent edits, history, modes and saved state', async ({ page }) => {
+  await page.locator('#file-input').setInputFiles([
+    { name: 'a.md', mimeType: 'text/markdown', buffer: Buffer.from('# A') },
+    { name: 'b.md', mimeType: 'text/markdown', buffer: Buffer.from('# B') },
+  ]);
+  await expect(page.getByRole('tab')).toHaveCount(3);
+  await expect(page.locator('#filename')).toHaveValue('b.md');
+  await page.locator('#source').fill('# B edited');
+  await page.getByRole('tab', { name: 'a.md', exact: true }).click();
+  await expect(page.locator('#source')).toHaveValue('# A');
+  await expect(page.locator('#preview')).toHaveAttribute('contenteditable', 'false');
+  await page.getByRole('button', { name: 'プレビュー', exact: true }).click();
+  await page.locator('#visual-edit').check();
+  await page.locator('#preview h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' visual');
+  await expect(page.locator('#source')).toHaveValue('# A visual');
+  await page.getByRole('tab', { name: '● b.md', exact: true }).click();
+  await expect(page.locator('#source')).toHaveValue('# B edited');
+  await expect(page.locator('#visual-edit')).not.toBeChecked();
+  await page.locator('#undo-button').click();
+  await expect(page.locator('#source')).toHaveValue('# B');
+  await page.locator('#redo-button').click();
+  await expect(page.locator('#source')).toHaveValue('# B edited');
+  const pending = page.waitForEvent('download');
+  await page.locator('#save-button').click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toBe('b.md');
+  expect(await readFile(await download.path(), 'utf8')).toBe('# B edited');
+  await expect(page.getByRole('tab', { name: 'b.md', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '● a.md', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: '● a.md', exact: true }).click();
+  await expect(page.locator('#visual-edit')).toBeChecked();
+  await expect(page.locator('#workspace')).toHaveAttribute('data-mode', 'preview');
+  await page.reload();
+  await expect(page.getByRole('tab')).toHaveCount(3);
+  await expect(page.locator('#source')).toHaveValue('# A visual');
+  await expect(page.locator('#visual-edit')).toBeChecked();
+  await page.getByRole('tab', { name: 'b.md', exact: true }).click();
+  await expect(page.locator('#source')).toHaveValue('# B edited');
+});
+
+test('new tabs preserve pending edits and the final closed tab becomes a blank document', async ({ page }) => {
+  await page.locator('#source').fill('preserved');
+  await page.locator('#new-button').click();
+  await expect(page.getByRole('tab')).toHaveCount(2);
+  await page.getByRole('button', { name: '無題.mdを閉じる', exact: true }).click();
+  await expect(page.locator('#source')).toHaveValue('preserved');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'はじめてのノート.mdを閉じる', exact: true }).click();
+  await expect(page.getByRole('tab')).toHaveCount(1);
+  await expect(page.locator('#source')).toHaveValue('');
+  await page.reload();
+  await expect(page.getByRole('tab')).toHaveCount(1);
+  await expect(page.locator('#source')).toHaveValue('');
+});
+
+test('migrates the previous single-file draft', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.removeItem('markdown-desk:tabs:v2');
+    localStorage.setItem('markdown-desk:draft:v1', JSON.stringify({ text: '# Legacy edit', name: 'legacy.md', savedText: '# Legacy', savedName: 'legacy.md' }));
+  });
+  // A fresh page avoids the outgoing pagehide handler replacing the migration fixture.
+  const restored = await page.context().newPage();
+  await restored.goto('/');
+  await expect(restored.locator('#source')).toHaveValue('# Legacy edit');
+  await expect(restored.getByRole('tab', { name: '● legacy.md', exact: true })).toBeVisible();
+  await expect(restored.locator('#visual-edit')).not.toBeChecked();
 });
