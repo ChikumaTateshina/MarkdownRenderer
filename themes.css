@@ -1,0 +1,95 @@
+/* Compact palettes inspired by VS Code's built-in light, dark and contrast themes. */
+:root, :root[data-theme=light] {
+  color-scheme: light;
+  --bg: #ffffff; --fg: #1f1f1f; --panel: #f8f8f8; --line: #d4d4d4; --muted: #616161;
+  --hover: #e8e8e8; --active: #e8eff7; --accent: #005fb8; --selection: #add6ff;
+  --code-bg: #f4f4f4; --comment: #008000; --keyword: #0000ff; --string: #a31515;
+  --number: #098658; --function: #795e26; --type: #267f99; --variable: #001080;
+}
+:root[data-theme=dark] {
+  color-scheme: dark;
+  --bg: #1f1f1f; --fg: #cccccc; --panel: #181818; --line: #454545; --muted: #a0a0a0;
+  --hover: #2a2d2e; --active: #333b45; --accent: #4daafc; --selection: #264f78;
+  --code-bg: #252526; --comment: #6a9955; --keyword: #569cd6; --string: #ce9178;
+  --number: #b5cea8; --function: #dcdcaa; --type: #4ec9b0; --variable: #9cdcfe;
+}
+:root[data-theme=contrast] {
+  color-scheme: dark;
+  --bg: #000000; --fg: #ffffff; --panel: #000000; --line: #ffffff; --muted: #e0e0e0;
+  --hover: #202020; --active: #202020; --accent: #ffff00; --selection: #004f80;
+  --code-bg: #000000; --comment: #7fff7f; --keyword: #70cfff; --string: #ffadad;
+  --number: #b5ffb5; --function: #ffff80; --type: #4effdf; --variable: #c0e8ff;
+}
+[hidden] { display: none !important; }
+html, body { color: var(--fg); background: var(--bg); }
+button, input, textarea, select { color: var(--fg); }
+button:hover { background: var(--hover); }
+button:disabled { color: var(--muted); opacity: .5; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline-color: var(--accent); }
+select { font: inherit; font-size: 12px; border: 1px solid var(--line); padding: 4px; max-width: 175px; background: var(--bg); }
+input::selection, textarea::selection, ::selection { background: var(--selection); }
+.app-header, .file-tabs, .format-bar, .pane-heading { background: var(--panel); }
+.theme-picker { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.document-bar { flex-wrap: wrap; }
+.document-title { min-width: 160px; }
+.file-tab.active, .view-tabs button[aria-pressed=true], #hex-toggle[aria-pressed=true] { background: var(--active); border-color: var(--line); }
+.file-tab.active { box-shadow: inset 0 -2px var(--accent); }
+.file-tab .close-tab, .pane-heading, .status-bar, .help-note { color: var(--muted); }
+.pane-heading { border-color: var(--line); }
+#filename, #source, .toast, dialog { background: var(--bg); color: var(--fg); border-color: var(--line); }
+.source-editor { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+#source, #source-highlight { position: absolute; inset: 0; height: 100%; width: 100%; margin: 0; padding: 20px; font: 14px/1.8 var(--mono); letter-spacing: normal; tab-size: 2; white-space: pre; overflow-wrap: normal; word-break: normal; border: 0; border-radius: 0; }
+#source-highlight { pointer-events: none; overflow: hidden; display: none; }
+.highlighted #source-highlight { display: block; }
+.highlighted #source { color: transparent; -webkit-text-fill-color: transparent; background: transparent; caret-color: var(--fg); }
+.highlighted #source::selection { color: var(--fg); -webkit-text-fill-color: var(--fg); background: var(--selection); }
+#source::placeholder { color: var(--muted); -webkit-text-fill-color: var(--muted); }
+#source-highlight .token { font-weight: normal; font-style: normal; }
+.markdown-body[contenteditable=true]:focus { outline-color: var(--accent); }
+.markdown-body:empty:before { color: var(--muted); }
+.markdown-body a { color: var(--accent); }
+.markdown-body blockquote { color: var(--muted); border-color: var(--line); }
+.markdown-body code, .markdown-body pre, .markdown-body th { background: var(--code-bg); }
+.markdown-body pre code { background: transparent; }
+.markdown-body td, .markdown-body th, .markdown-body hr { border-color: var(--line); }
+.markdown-body input[type=checkbox], .edit-toggle input { accent-color: var(--accent); }
+.markdown-body.code-preview { max-width: none; padding: 20px; }
+.markdown-body.code-preview pre { margin: 0; padding: 0; background: transparent; white-space: pre-wrap; }
+.markdown-body.code-preview code { font: 14px/1.8 var(--mono); }
+.token.comment, .token.prolog, .token.doctype { color: var(--comment); }
+.token.keyword, .token.boolean, .token.tag, .token.atrule { color: var(--keyword); }
+.token.string, .token.char, .token.attr-value, .token.regex { color: var(--string); }
+.token.number, .token.constant { color: var(--number); }
+.token.function { color: var(--function); }
+.token.class-name, .token.builtin { color: var(--type); }
+.token.variable, .token.property, .token.attr-name { color: var(--variable); }
+.token.title, .token.important { color: var(--accent); }
+.workspace[data-binary=true] { display: flex; }
+.workspace[data-binary=true] .source-pane, .workspace[data-binary=true] .preview-pane { display: none; }
+#binary-pane { display: flex; flex-direction: column; min-width: 0; width: 100%; min-height: 0; }
+.hex-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 12px; }
+#hex-offset { background: var(--bg); border: 1px solid var(--line); padding: 4px; width: 115px; font: 12px var(--mono); }
+.hex-scroll { overflow: auto; min-height: 0; flex: 1; }
+#hex-content { font: 13px/1.9 var(--mono); padding: 12px 20px; margin: 0; white-space: pre; }
+.binary-note { font-size: 12px; color: var(--muted); padding: 0 12px; margin: 8px 0 0; }
+body.dragging .workspace { outline-color: var(--accent); }
+@media (max-width: 650px) {
+  .app-header { gap: 6px; }
+  .theme-picker { margin-left: auto; }
+  .file-actions { flex-basis: 100%; justify-content: flex-end; }
+  #source, #source-highlight { padding: 12px; font-size: 13px; }
+  #language-mode { max-width: 130px; }
+  .document-title { flex-basis: 100%; }
+  .view-tabs { flex: none; }
+  .format-bar { gap: 8px; }
+  #file-info { margin-left: auto; }
+  #hex-content { padding: 12px; }
+}
+@media print {
+  :root, :root[data-theme] { color-scheme: light; --bg: #fff; --fg: #000; --code-bg: #f5f5f5; --line: #bbb; --muted: #444; --accent: #000; }
+  .token { color: #000 !important; }
+  .hex-toolbar { display: none; }
+  .workspace[data-binary=true] .preview-pane { display: none !important; }
+  #binary-pane:not([hidden]), .hex-scroll { display: block; overflow: visible; height: auto; }
+  #hex-content { color: #000; padding: 0; font-size: 8pt; }
+}

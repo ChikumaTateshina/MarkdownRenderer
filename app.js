@@ -89,12 +89,20 @@ console.log(message);
   let documents = [];
   let activeId;
   let nextId = 0;
+  const currentDocument = () => documents.find(doc => doc.id === activeId);
+  const currentLanguage = () => currentDocument()?.language === 'auto' ? DeskFiles.language(filename.value) : (currentDocument()?.language || DeskFiles.language(filename.value));
+  const isBinaryView = () => currentDocument()?.kind === 'binary' || currentDocument()?.hexView;
+  const isMarkdown = () => !isBinaryView() && currentLanguage() === 'markdown';
+  for (const [value, name] of Object.entries(DeskFiles.languages)) {
+    $('language-mode').add(new Option(name, value));
+  }
   const dirty = () => source.value !== savedText || filename.value !== savedName;
   const documentDirty = doc => doc.text !== doc.savedText || doc.name !== doc.savedName;
 
   function createDocument(text, name, saved = {}) {
     return {
       id: ++nextId, text, name,
+      kind: 'text', bytes: null, language: 'auto', hexView: false, hexOffset: 0, bom: false, eol: '\n',
       savedText: typeof saved.savedText === 'string' ? saved.savedText : text,
       savedName: typeof saved.savedName === 'string' ? saved.savedName : name,
       history: [text], historyIndex: 0, mode: 'split', visual: false,
@@ -158,6 +166,7 @@ console.log(message);
     clearTimeout(persistTimer);
     activeId = id;
     source.value = doc.text;
+    $('language-mode').value = doc.language;
     filename.value = doc.name;
     savedText = doc.savedText;
     savedName = doc.savedName;
@@ -207,6 +216,35 @@ console.log(message);
 
   function render() {
     clearTimeout(renderTimer);
+    const doc = currentDocument();
+    if (!doc) return;
+    const binary = isBinaryView();
+    const markdown = isMarkdown();
+    $('workspace').dataset.binary = String(Boolean(binary));
+    $('binary-pane').hidden = !binary;
+    $('hex-toggle').setAttribute('aria-pressed', String(Boolean(binary)));
+    $('hex-toggle').disabled = doc.kind === 'binary';
+    $('language-mode').disabled = doc.kind === 'binary';
+    $('visual-edit').disabled = !markdown;
+    document.querySelectorAll('[data-format]').forEach(button => { button.disabled = !markdown; });
+    document.querySelectorAll('button[data-mode]').forEach(button => { button.disabled = Boolean(binary); });
+    source.disabled = doc.kind === 'binary';
+    if (!markdown) {
+      visual = false;
+      $('visual-edit').checked = false;
+      preview.contentEditable = 'false';
+    }
+    preview.classList.toggle('code-preview', !markdown);
+    paintSource();
+    if (binary) { renderHex(); return; }
+    if (!markdown) {
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.innerHTML = $('highlight-toggle').checked ? DeskFiles.highlight(source.value, currentLanguage()) : DeskFiles.escape(source.value);
+      pre.append(code);
+      preview.replaceChildren(pre);
+      return;
+    }
     preview.innerHTML = safeHTML(marked.parse(source.value, { gfm: true, breaks: false }));
     preview.querySelectorAll('a').forEach(a => {
       const href = a.getAttribute('href') || '';
@@ -225,12 +263,49 @@ console.log(message);
       if (input.type !== 'checkbox') input.remove();
       else input.disabled = !visual;
     });
+    if ($('highlight-toggle').checked && !visual) {
+      preview.querySelectorAll('pre code').forEach(code => {
+        const lang = (code.className.match(/language-([\w+-]+)/) || [,''])[1];
+        const alias = { js: 'javascript', ts: 'typescript', py: 'python', html: 'markup', xml: 'markup', sh: 'bash', yml: 'yaml' };
+        code.innerHTML = DeskFiles.highlight(code.textContent, alias[lang] || lang);
+      });
+    }
+  }
+
+  function paintSource(plain = false) {
+    const lang = currentLanguage();
+    const enabled = $('highlight-toggle').checked && source.value.length <= DeskFiles.highlightLimit && Boolean(Prism.languages[lang]) && !isBinaryView();
+    source.parentElement.classList.toggle('highlighted', enabled);
+    const layer = $('source-highlight');
+    if (enabled) layer.innerHTML = (plain ? DeskFiles.escape(source.value) : DeskFiles.highlight(source.value, lang)) + '\n';
+    else layer.textContent = '';
+    layer.scrollTop = source.scrollTop;
+    layer.scrollLeft = source.scrollLeft;
+  }
+
+  function fileBytes() {
+    const doc = currentDocument();
+    if (doc.kind === 'binary') return doc.bytes;
+    return new TextEncoder().encode((doc.bom ? '\uFEFF' : '') + source.value.replace(/\n/g, doc.eol));
+  }
+
+  function renderHex() {
+    const doc = currentDocument();
+    const bytes = fileBytes();
+    doc.hexOffset = Math.max(0, Math.min(Math.floor(doc.hexOffset / 256) * 256, Math.max(0, Math.ceil(bytes.length / 256) - 1) * 256));
+    $('hex-content').textContent = DeskFiles.hexPage(bytes, doc.hexOffset);
+    $('hex-offset').value = '0x' + doc.hexOffset.toString(16).toUpperCase();
+    $('hex-page').textContent = `${bytes.length ? doc.hexOffset + 1 : 0}–${Math.min(bytes.length, doc.hexOffset + 256)} / ${bytes.length.toLocaleString('ja-JP')} bytes`;
+    $('hex-prev').disabled = doc.hexOffset === 0;
+    $('hex-next').disabled = doc.hexOffset + 256 >= bytes.length;
   }
 
   function updateStats() {
     $('document-stats').textContent = `${Array.from(source.value).length.toLocaleString('ja-JP')} 文字 · ${source.value.split('\n').length.toLocaleString('ja-JP')} 行`;
-    $('undo-button').disabled = historyIndex <= 0;
-    $('redo-button').disabled = historyIndex >= history.length - 1;
+    if (currentDocument()?.kind === 'binary') $('document-stats').textContent = `${currentDocument().bytes.length.toLocaleString('ja-JP')} bytes · 閲覧専用`;
+    $('file-info').textContent = currentDocument()?.kind === 'binary' ? 'バイナリ · 再読み込みで閉じます' : `${DeskFiles.languages[currentLanguage()] || 'テキスト'} · UTF-8${currentDocument()?.bom ? ' BOM' : ''}${source.value.length > DeskFiles.highlightLimit ? ' · 大きな文書のハイライトを省略' : ''}`;
+    $('undo-button').disabled = isBinaryView() || historyIndex <= 0;
+    $('redo-button').disabled = isBinaryView() || historyIndex >= history.length - 1;
     document.title = `${dirty() ? '• ' : ''}${filename.value || '無題.md'} — Markdown Desk`;
     renderTabs();
   }
@@ -239,13 +314,15 @@ console.log(message);
     clearTimeout(persistTimer);
     try {
       captureDocument();
+      const textDocuments = documents.filter(doc => doc.kind !== 'binary');
       localStorage.setItem(storageKey, JSON.stringify({
-        activeIndex: documents.findIndex(doc => doc.id === activeId),
-        documents: documents.map(({ text, name, savedText, savedName, mode, visual }) => ({ text, name, savedText, savedName, mode, visual })),
+        activeIndex: Math.max(0, textDocuments.findIndex(doc => doc.id === activeId)),
+        documents: textDocuments.map(({ text, name, savedText, savedName, mode, visual, language, hexView, bom, eol }) => ({ text, name, savedText, savedName, mode, visual, language, hexView, bom, eol })),
       }));
       localStorage.removeItem(legacyStorageKey);
       storageAvailable = true;
       $('save-status').textContent = dirty() ? '下書きを端末に保存済み · ファイル未保存' : '下書きを端末に保存済み';
+      if (currentDocument()?.kind === 'binary') $('save-status').textContent = 'バイナリの内容は下書き保存されません';
     } catch {
       storageAvailable = false;
       $('save-status').textContent = '下書きを保存できません · ファイルに保存してください';
@@ -261,6 +338,7 @@ console.log(message);
   }
 
   function changed(origin) {
+    paintSource(origin !== 'preview');
     record();
     updateStats();
     if (origin !== 'preview') {
@@ -273,7 +351,7 @@ console.log(message);
   }
 
   function visualChanged() {
-    if (composing) return;
+    if (composing || !visual || !isMarkdown()) return;
     const clone = preview.cloneNode(true);
     clone.querySelectorAll('input[type=checkbox]').forEach((input, index) => {
       if (preview.querySelectorAll('input[type=checkbox]')[index].checked) input.setAttribute('checked', '');
@@ -284,6 +362,7 @@ console.log(message);
   }
 
   function moveHistory(offset) {
+    if (isBinaryView()) return;
     const next = historyIndex + offset;
     if (next < 0 || next >= history.length) return;
     historyIndex = next;
@@ -304,6 +383,7 @@ console.log(message);
   }
 
   function setVisual(enabled) {
+    enabled = enabled && isMarkdown();
     visual = enabled;
     if (enabled && $('workspace').dataset.mode === 'source') setMode('split');
     $('visual-edit').checked = enabled;
@@ -314,23 +394,28 @@ console.log(message);
     if (enabled) { lastEditor = 'preview'; preview.focus(); }
   }
 
-  function addDocument(text, name) {
+  function addDocument(text, name, options = {}) {
     captureDocument();
     const doc = createDocument(text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n'), name);
+    Object.assign(doc, options);
+    if (DeskFiles.language(name) !== 'markdown') doc.mode = 'source';
     documents.push(doc);
     activateDocument(doc.id);
   }
 
   async function openFile(file) {
     if (!file) return;
-    if (!/\.(md|markdown|txt)$/i.test(file.name)) { toast('.md / .markdown / .txt ファイルを選択してください'); return; }
-    if (file.size > 2 * 1024 * 1024) { toast('2 MB 以下のファイルを選択してください'); return; }
+    if (file.size > 32 * 1024 * 1024) { toast('32 MB 以下のファイルを選択してください'); return; }
     try {
-      const bytes = await file.arrayBuffer();
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-      addDocument(text, file.name);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const result = DeskFiles.classify(bytes, file.name);
+      if (result.kind === 'binary') addDocument('', file.name, { kind: 'binary', bytes });
+      else {
+        if (file.size > 2 * 1024 * 1024) { toast('テキスト編集は2 MB以下に対応しています'); return; }
+        addDocument(result.text, file.name, { bom: result.bom, eol: result.text.includes('\r\n') ? '\r\n' : result.text.includes('\r') ? '\r' : '\n' });
+      }
       toast(`${file.name} を開きました`);
-    } catch { toast('読み込めませんでした。UTF-8で保存したファイルを選択してください'); }
+    } catch { toast('ファイルを読み込めませんでした'); }
   }
 
   let openQueue = Promise.resolve();
@@ -341,9 +426,8 @@ console.log(message);
 
   function save() {
     let name = filename.value.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, '_') || '無題.md';
-    if (!/\.(md|markdown)$/i.test(name)) name += '.md';
     filename.value = name;
-    const url = URL.createObjectURL(new Blob([source.value], { type: 'text/markdown;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob([fileBytes()], { type: 'application/octet-stream' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = name;
@@ -355,7 +439,7 @@ console.log(message);
     savedName = name;
     updateStats();
     persist();
-    toast('Markdownのダウンロードを開始しました');
+    toast('ファイルのダウンロードを開始しました');
   }
 
   function insertSource(kind, url) {
@@ -379,6 +463,7 @@ console.log(message);
   }
 
   function applyFormat(kind) {
+    if (!isMarkdown()) return;
     let url;
     if (kind === 'link') {
       url = prompt('リンク先のURL（https:// または mailto:）', 'https://');
@@ -412,8 +497,12 @@ console.log(message);
   }
 
   source.addEventListener('focus', () => { lastEditor = 'source'; });
+  source.addEventListener('scroll', () => {
+    $('source-highlight').scrollTop = source.scrollTop;
+    $('source-highlight').scrollLeft = source.scrollLeft;
+  });
   preview.addEventListener('focus', () => { lastEditor = 'preview'; });
-  source.addEventListener('input', () => { if (!composing) changed('source'); });
+  source.addEventListener('input', () => { if (!composing) changed('source'); else paintSource(true); });
   preview.addEventListener('input', () => { if (visual) visualChanged(); });
   for (const editor of [source, preview]) {
     editor.addEventListener('compositionstart', () => { composing = true; });
@@ -443,7 +532,27 @@ console.log(message);
       changed('source');
     }
   });
-  filename.addEventListener('input', () => { updateStats(); persist(); });
+  filename.addEventListener('input', () => { render(); updateStats(); persist(); });
+  $('language-mode').addEventListener('change', event => {
+    currentDocument().language = event.target.value;
+    render(); updateStats(); persist();
+  });
+  $('highlight-toggle').addEventListener('change', render);
+  $('hex-toggle').addEventListener('click', () => {
+    currentDocument().hexView = !currentDocument().hexView;
+    render(); updateStats(); persist();
+  });
+  $('hex-prev').addEventListener('click', () => { currentDocument().hexOffset -= 256; renderHex(); });
+  $('hex-next').addEventListener('click', () => { currentDocument().hexOffset += 256; renderHex(); });
+  function jumpHex() {
+    const value = $('hex-offset').value.trim();
+    const offset = /^(0x[0-9a-f]+|\d+)$/i.test(value) ? Number(value) : NaN;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset >= fileBytes().length) { toast('ファイル内のオフセットを10進数または0x付き16進数で入力してください'); return; }
+    currentDocument().hexOffset = offset;
+    renderHex();
+  }
+  $('hex-go').addEventListener('click', jumpHex);
+  $('hex-offset').addEventListener('keydown', event => { if (event.key === 'Enter') jumpHex(); });
   $('visual-edit').addEventListener('change', event => setVisual(event.target.checked));
   document.querySelectorAll('button[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
   document.querySelectorAll('[data-format]').forEach(button => {
@@ -465,7 +574,7 @@ console.log(message);
     const key = event.key.toLowerCase();
     if (key === 's') { event.preventDefault(); save(); }
     if (key === 'o') { event.preventDefault(); $('file-input').click(); }
-    if ((key === 'z' || key === 'y') && document.activeElement !== filename) {
+    if ((key === 'z' || key === 'y') && document.activeElement !== filename && document.activeElement !== $('hex-offset')) {
       event.preventDefault(); moveHistory(key === 'y' || event.shiftKey ? 1 : -1);
     }
     if (key === 'p') render();
@@ -495,6 +604,10 @@ console.log(message);
   if (Array.isArray(session?.documents)) {
     documents = session.documents.filter(doc => doc && typeof doc.text === 'string' && typeof doc.name === 'string').map(doc => {
       const restored = createDocument(doc.text, doc.name, doc);
+      restored.language = doc.language === 'auto' || Object.hasOwn(DeskFiles.languages, doc.language) ? doc.language : 'auto';
+      restored.hexView = doc.hexView === true;
+      restored.bom = doc.bom === true;
+      restored.eol = ['\n', '\r\n', '\r'].includes(doc.eol) ? doc.eol : '\n';
       restored.mode = ['source', 'split', 'preview'].includes(doc.mode) ? doc.mode : 'split';
       restored.visual = doc.visual === true && restored.mode !== 'source';
       return restored;

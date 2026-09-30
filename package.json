@@ -12,6 +12,7 @@
   "dependencies": {
     "dompurify": "3.4.16",
     "marked": "18.0.14",
+    "prismjs": "1.30.0",
     "turndown": "7.2.4",
     "turndown-plugin-gfm": "1.0.2"
   },

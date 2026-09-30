@@ -26,7 +26,7 @@ jobs:
       - name: Collect static files
         run: |
           mkdir public
-          cp index.html styles.css app.js favicon.svg .nojekyll public/
+          cp index.html styles.css themes.css app.js file-tools.js favicon.svg .nojekyll public/
           cp -r vendor public/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
